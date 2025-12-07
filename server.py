@@ -1,38 +1,27 @@
 import os
-import asyncio
-from aiohttp import web
+from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
+import asyncio
 
-API_TOKEN = os.environ.get("BOT_TOKEN")
-if not API_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set")
-
-PORT = int(os.environ.get("PORT", 10000))
-
-bot = Bot(token=API_TOKEN)
+TOKEN = os.environ.get("BOT_TOKEN")
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-async def handle_root(request):
-    return web.Response(text="Bot is running!")
+app = Flask(__name__)
 
-@dp.message(CommandStart())
-async def start_cmd(message: types.Message):
-    await message.answer("Бот запущен ✅")
+@app.get("/")
+def home():
+    return "Webhook bot running!"
 
-async def start_polling():
-    await dp.start_polling(bot, handle_signals=False)
+@app.post("/webhook")
+def webhook():
+    update = types.Update.model_validate(request.json)
+    asyncio.get_event_loop().create_task(dp.feed_update(bot, update))
+    return ""
 
-async def start_app():
-    app = web.Application()
-    app.add_routes([web.get("/", handle_root)])
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    print(f"Server running on port {PORT}")
-    await start_polling()
+@dp.message()
+async def start(msg: types.Message):
+    await msg.answer("Бот работает через Webhook! 😊")
 
 if __name__ == "__main__":
-    asyncio.run(start_app())
-
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
