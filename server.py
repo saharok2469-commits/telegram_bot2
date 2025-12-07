@@ -1,36 +1,47 @@
+# server.py
 import os
 import asyncio
-from flask import Flask
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 
-# Загружаем данные окружения
 API_TOKEN = os.environ.get("BOT_TOKEN")
-GROUP_CHAT_ID = "-1003376710670"
+if not API_TOKEN:
+    raise RuntimeError("BOT_TOKEN is not set in environment variables")
+
+PORT = int(os.environ.get("PORT", 10000))
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Flask сервер
-app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "Bot is running!"
+# HTTP handler для Render — он проверит, что порт открыт
+async def handle_root(request):
+    return web.Response(text="Bot is running!")
 
-# Telegram bot handlers
+# Телеграм-обработчик /start
 @dp.message(CommandStart())
-async def start_handler(message: types.Message):
-    await message.answer("Привет! Бот работает 😊")
+async def cmd_start(message: types.Message):
+    await message.answer("Привет! Бот работает ✅")
 
-async def start_bot():
-    await dp.start_polling(bot)
+async def start_polling():
+    # handle_signals=False чтобы избежать ошибок set_wakeup_fd в средах типа Render
+    await dp.start_polling(bot, handle_signals=False)
+
+async def start_app():
+    # создаём aiohttp-приложение и запускаем его на PORT
+    app = web.Application()
+    app.add_routes([web.get("/", handle_root)])
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"HTTP server started on port {PORT}")
+
+    # запускаем polling — это будет работать в том же event loop
+    await start_polling()
 
 if __name__ == "__main__":
-    # Запускаем aiogram в фоне
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())
-
-    # Запускаем Flask (это важно для Render!)
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    # запускаем всё в asyncio.run — этот процесс будет держать порт открытым
+    asyncio.run(start_app())
